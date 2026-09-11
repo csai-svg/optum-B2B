@@ -1,0 +1,19 @@
+{
+  "settings": {
+    "site_name": "Optum Merchandise Store",
+    "logo_url": "assets/brand/logo.png",
+    "logo_white_url": "assets/brand/logo-white.png",
+    "hero_title": "Optum branded merchandise",
+    "hero_subtitle": "Browse the catalogue and build a request — no sign-in needed.",
+    "footer_note": "Optum branded merchandise store — a view-only catalogue."
+  },
+  "banners": [
+    {
+      "title": "Optum branded merchandise",
+      "subtitle": "Apparel, drinkware, travel, tech and more",
+      "image_url": "assets/brand/hero-optum.png",
+      "link_url": "all.html"
+    }
+  ],
+  "departments": []
+}
