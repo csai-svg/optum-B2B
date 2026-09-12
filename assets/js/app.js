@@ -11,8 +11,8 @@ const CONFIG = {
   // CFG.BRAND='Optum'). Deploy it from the master sheet and paste the /exec URL
   // into BOTH fields below. Left blank so the site serves the bundled snapshot
   // (assets/products.json) until then — never Deloitte's feed.
-  FEED_URL: '',
-  API_URL: '',
+  FEED_URL: 'https://script.google.com/macros/s/AKfycbzNmMUxZWR7TtSGZYY0QS4Ld0oJ2QCs-OYB6cmOmBdHftrnZQdQkebt3ww-pbe11_BShA/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbzNmMUxZWR7TtSGZYY0QS4Ld0oJ2QCs-OYB6cmOmBdHftrnZQdQkebt3ww-pbe11_BShA/exec',
   API_TOKEN: '',
   CURRENCY: '₹',
   BRAND: 'Optum',
