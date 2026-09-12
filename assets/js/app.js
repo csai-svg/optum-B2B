@@ -32,6 +32,13 @@ const qty = n => Number(n || 0).toLocaleString('en-IN');
 
 const param = k => new URLSearchParams(location.search).get(k) || '';
 
+/* Delays `fn` until `wait` ms after the last call — used to keep the filter
+   bar from re-rendering the whole grid on every keystroke. */
+function debounce_(fn, wait = 200) {
+  let t;
+  return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), wait); };
+}
+
 function el(tag, attrs = {}, ...kids) {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -621,13 +628,18 @@ const Filters = {
     opts = opts || {};
     const s = this.state;
     const fire = () => onChange();
+    /* Search/min/max/moq are typed characters, so re-filtering/re-rendering
+       222 products on every keystroke makes the field feel laggy. Sort and
+       category are discrete choices (one event per change), so those still
+       fire immediately. */
+    const fireDebounced = debounce_(fire, 200);
 
     const field = (label, input) =>
       el('label', { class: 'fbar-fld' }, el('span', {}, label), input);
 
     const search = el('input', {
       type: 'search', id: 'fq', placeholder: 'Search name or SKU', value: s.q,
-      oninput: e => { s.q = e.target.value; fire(); },
+      oninput: e => { s.q = e.target.value; fireDebounced(); },
     });
 
     const sort = el('select', {
@@ -637,13 +649,13 @@ const Filters = {
       el('option', { value: v, selected: s.sort === v ? 'selected' : null }, t)));
 
     const min = el('input', { type: 'number', min: '0', id: 'fmin', placeholder: 'Min',
-      value: s.min || '', oninput: e => { s.min = Number(e.target.value) || 0; fire(); } });
+      value: s.min || '', oninput: e => { s.min = Number(e.target.value) || 0; fireDebounced(); } });
     const max = el('input', { type: 'number', min: '0', id: 'fmax', placeholder: 'Max',
-      value: isFinite(s.max) ? s.max : '', oninput: e => { s.max = Number(e.target.value) || Infinity; fire(); } });
+      value: isFinite(s.max) ? s.max : '', oninput: e => { s.max = Number(e.target.value) || Infinity; fireDebounced(); } });
 
     const moq = el('input', { type: 'number', min: '0', id: 'fmoq', placeholder: 'Any',
       value: isFinite(s.moq) ? s.moq : '',
-      oninput: e => { s.moq = Number(e.target.value) || Infinity; fire(); } });
+      oninput: e => { s.moq = Number(e.target.value) || Infinity; fireDebounced(); } });
 
     const bits = [field('Search', search), field('Sort', sort),
       el('label', { class: 'fbar-fld' }, el('span', {}, 'Price'),
@@ -663,7 +675,7 @@ const Filters = {
         class: 'btn btn-ghost btn-sm', style: 'margin-left:auto',
         onclick: () => { const keep = s.cat, sub = s.sub; Filters.reset();
           Filters.state.cat = opts.keepCategory ? keep : ''; Filters.state.sub = opts.keepCategory ? sub : '';
-          host.textContent = ''; Filters.bar(host, opts, onChange); fire(); },
+          host.textContent = ''; Filters.bar(host, opts, onChange); fireDebounced(); },
       }, 'Reset')));
   },
 };
@@ -904,6 +916,15 @@ function mount(active) {
   document.body.prepend(header(active));
   document.body.append(footer());
   Cart.paintCount();
+}
+
+/* Re-renders just the header. Every page calls mount() before the catalogue
+   has necessarily loaded (see below) so the chrome appears immediately;
+   header() falls back to NAV_CATEGORIES with no subcategories until then.
+   Call this again once Catalog.load() resolves so the nav dropdowns fill in
+   with real subcategories without a second blank-page wait. */
+function repaintHeader(active) {
+  document.querySelector('.site-head')?.replaceWith(header(active));
 }
 
 /* Catalogue tile, shared by index.html and category.html. */

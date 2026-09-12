@@ -38,9 +38,11 @@
 let P = null;
 
 (async function () {
+  mount();                // header/footer render immediately; which category
+                          // to highlight isn't known until the SKU resolves
   await Catalog.load();
   P = Catalog.bySku(param('sku'));
-  mount(P ? P.category : null);
+  repaintHeader(P ? P.category : null);
 
   if (!P) {
     document.getElementById('pdp').append(

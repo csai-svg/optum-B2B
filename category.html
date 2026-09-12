@@ -27,9 +27,13 @@
 <script src="assets/js/app.js"></script>
 <script>
 (async function () {
+  // The category is usually known from the URL alone, so the header/footer
+  // can render before the catalogue fetch; only a bare category.html (no
+  // ?cat=) needs the loaded data to pick a default.
+  mount(param('cat') || NAV_CATEGORIES[0]);
   await Catalog.load();
   const cat = param('cat') || Catalog.categories[0].slug;
-  mount(cat);
+  repaintHeader(cat);   // now fills in real subcategory dropdowns
 
   const meta = Catalog.categories.find(c => c.slug === cat);
   if (!meta) { document.getElementById('title').textContent = 'Unknown category'; return; }

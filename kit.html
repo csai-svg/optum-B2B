@@ -40,8 +40,9 @@
 <script src="assets/js/app.js"></script>
 <script>
 (async function () {
+  mount('Kit');           // header/footer render immediately
   await Catalog.load();
-  mount('Kit');
+  repaintHeader('Kit');   // now fills in real subcategory dropdowns
   const boxes = Catalog.allProducts.filter(p => p.category === 'Gift Box');
   const host = document.getElementById('kits');
   if (!boxes.length) {

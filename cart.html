@@ -20,8 +20,9 @@
 <script src="assets/js/app.js"></script>
 <script>
 (async function () {
+  mount();               // header/footer render immediately
   await Catalog.load();
-  mount();
+  repaintHeader();        // now fills in real subcategory dropdowns
   paint();
 })();
 

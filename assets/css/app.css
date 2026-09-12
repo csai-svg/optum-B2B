@@ -516,7 +516,9 @@ input[type=file] { font-size: .85rem; }
 .hero-art { position: relative; background: var(--ink); }
 .hero-slide { display: none; }
 .hero-slide.on { display: block; }
-.hero-slide img { display: block; width: 100%; height: auto; }
+/* Reserves the hero's box at its real aspect ratio before the image has
+   loaded, so the page doesn't jump once it arrives. */
+.hero-slide img { display: block; width: 100%; height: auto; aspect-ratio: 2073 / 600; object-fit: cover; }
 .hero-dots { position: absolute; left: 0; right: 0; bottom: 14px;
              display: flex; justify-content: center; gap: 9px; }
 .hero-dot { width: 11px; height: 11px; padding: 0; border: 0; border-radius: 50%;

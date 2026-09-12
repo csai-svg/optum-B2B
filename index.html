@@ -36,8 +36,10 @@
 <script src="assets/js/app.js"></script>
 <script>
 (async function () {
+  mount();               // header/footer render immediately, before the
+                          // catalogue fetch (which can take a few seconds)
   await Catalog.load();
-  mount();
+  repaintHeader();        // now fills in real subcategory dropdowns
   paintHero();
   paintBanners();
 

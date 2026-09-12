@@ -26,8 +26,9 @@
 <script src="assets/js/app.js"></script>
 <script>
 (async function () {
+  mount('All');           // header/footer render immediately
   await Catalog.load();
-  mount('All');
+  repaintHeader('All');   // now fills in real subcategory dropdowns
 
   // a search term in the URL, so a filtered view can be linked or bookmarked
   Filters.reset();
