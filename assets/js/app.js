@@ -306,29 +306,45 @@ function imgAt(url, w) {
   return /=w\d+$/.test(url) ? url.replace(/=w\d+$/, '=w' + w) : url;
 }
 
-/* Live catalogue from the Apps Script feed when configured, else the bundled
-   snapshot. The feed returns ONLY public columns (no cost/margins); the master
-   sheet stays private. Apps Script cold-starts can take several seconds, so a
-   slow OR failed feed both fall back to the snapshot rather than blocking
-   first render — the store must render fast even when the feed is cold. */
+/* Apps Script web apps don't set CORS headers for fetch(), and even when a
+   request does get through, cold starts can take several seconds — awaiting
+   that before first paint made every page load feel slow. Instead: render
+   instantly from a feed snapshot cached earlier this session, else the
+   bundled assets/products.json, and kick off a background JSONP call (a
+   <script> tag hitting a `callback=` param Code.gs already understands) to
+   refresh that cache for the *next* page view. The live feed still reaches
+   the site — just never blocks the page the user is looking at right now. */
+function feedUrl() {
+  return CONFIG.FEED_URL + '?fn=catalog&brand=' + encodeURIComponent(CONFIG.BRAND)
+    + (CONFIG.API_TOKEN ? '&token=' + encodeURIComponent(CONFIG.API_TOKEN) : '');
+}
+function jsonp(url, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
+    const cb = '__feedcb_' + Math.random().toString(36).slice(2);
+    const s = document.createElement('script');
+    let done = false;
+    const cleanup = () => { try { delete window[cb]; } catch (e) { window[cb] = undefined; } s.remove(); };
+    const timer = setTimeout(() => { if (!done) { done = true; cleanup(); reject(new Error('jsonp timeout')); } }, timeoutMs);
+    window[cb] = data => { if (done) return; done = true; clearTimeout(timer); cleanup(); resolve(data); };
+    s.onerror = () => { if (done) return; done = true; clearTimeout(timer); cleanup(); reject(new Error('jsonp error')); };
+    s.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cb;
+    document.head.appendChild(s);
+  });
+}
+function refreshFeedCache() {
+  if (!CONFIG.FEED_URL) return;
+  jsonp(feedUrl(), 12000)
+    .then(d => { if (d && Array.isArray(d.products) && d.products.length) { try { sessionStorage.setItem('cs_feed', JSON.stringify(d)); } catch (e) {} } })
+    .catch(() => {});
+}
 async function loadCatalogueJSON() {
-  const snapshot = () => fetch('assets/products.json').then(r => r.json());
-  if (!CONFIG.FEED_URL) return snapshot();
-  const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), 2500);
-  try {
-    const u = CONFIG.FEED_URL + '?fn=catalog&brand=' + encodeURIComponent(CONFIG.BRAND)
-      + (CONFIG.API_TOKEN ? '&token=' + encodeURIComponent(CONFIG.API_TOKEN) : '');
-    const res = await fetch(u, { redirect: 'follow', signal: ctrl.signal });
-    if (!res.ok) throw new Error('feed ' + res.status);
-    const data = await res.json();
-    if (!data || !Array.isArray(data.products) || !data.products.length) throw new Error('empty feed');
-    return data;
-  } catch (err) {
-    return snapshot();
-  } finally {
-    clearTimeout(timeout);
+  let base = null;
+  try { const c = sessionStorage.getItem('cs_feed'); if (c) base = JSON.parse(c); } catch (e) {}
+  if (!base || !Array.isArray(base.products) || !base.products.length) {
+    base = await fetch('assets/products.json').then(r => r.json());
   }
+  refreshFeedCache();   // background, non-blocking — updates the cache for the next page
+  return base;
 }
 
 const Catalog = {
