@@ -11,6 +11,8 @@ const CONFIG = {
   // CFG.BRAND='Optum'). Deploy it from the master sheet and paste the /exec URL
   // into BOTH fields below. Left blank so the site serves the bundled snapshot
   // (assets/products.json) until then — never Deloitte's feed.
+  // Shared across BOTH storefronts (Optum + Deloitte) — one Apps Script,
+  // one master sheet. CONFIG.BRAND below is what tells it which one this is.
   FEED_URL: 'https://script.google.com/macros/s/AKfycbzNmMUxZWR7TtSGZYY0QS4Ld0oJ2QCs-OYB6cmOmBdHftrnZQdQkebt3ww-pbe11_BShA/exec',
   API_URL: 'https://script.google.com/macros/s/AKfycbzNmMUxZWR7TtSGZYY0QS4Ld0oJ2QCs-OYB6cmOmBdHftrnZQdQkebt3ww-pbe11_BShA/exec',
   API_TOKEN: '',
@@ -66,7 +68,7 @@ async function api(fn, payload = {}) {
     res = await fetch(CONFIG.API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ fn, token: CONFIG.API_TOKEN, session: Auth.token(), ...payload }),
+      body: JSON.stringify({ fn, token: CONFIG.API_TOKEN, session: Auth.token(), brand: CONFIG.BRAND, ...payload }),
     });
   } catch (err) {
     /* fetch only rejects on a network-level failure, and the browser's own
@@ -104,7 +106,7 @@ function apiUpload(fn, payload = {}, onProgress) {
       err.transport = true;             // lets the caller retry over fetch
       reject(err);
     };
-    xhr.send(JSON.stringify({ fn, token: CONFIG.API_TOKEN, session: Auth.token(), ...payload }));
+    xhr.send(JSON.stringify({ fn, token: CONFIG.API_TOKEN, session: Auth.token(), brand: CONFIG.BRAND, ...payload }));
   });
 }
 
@@ -190,34 +192,32 @@ const Track = {
 
 /* ------------------------------------------------------------------
    Category grouping
-   The catalogue sheet stores one flat product tag per SKU (Backpacks,
-   Polos, Pens, ...). The storefront nav wants four merchandising
-   headings with those tags hanging off them as subcategories. Rather
-   than reshaping the sheet — which the Apps Script publish step would
-   overwrite on the next republish — the grouping is applied client-side
-   right after the catalogue loads: each product's `category` is
-   rewritten to its group and `subcategory` keeps the original tag, so
-   category.html, the filter bar and the nav all keep working unchanged.
-   A tag that is not listed here falls through to Utilities.
+   classify_() in apps-script-feed/Code.gs (mirrored by classify.py at
+   build time) already assigns each product a real top-level `category`
+   and a real `subcategory` (e.g. Tech / Appliances) from its name and
+   description — this is no longer a brand or a raw sheet tag. This pass
+   just guards against a category the nav doesn't know about (falls back
+   to Utilities) and rebuilds the `categories` list so category.html, the
+   filter bar and the nav dropdowns only ever show a subcategory that
+   actually has products behind it.
    ------------------------------------------------------------------ */
-/* The five storefront categories, in nav order. Products already carry their
-   final category (assigned from the sheet at build/feed time); we keep it and
-   use brand as the subcategory for the dropdowns. "Gift Box" products exist
+/* The five storefront categories, in nav order. "Gift Box" products exist
    but are surfaced on the Build-a-kit page, not in the top nav. */
 const NAV_CATEGORIES = ['Apparel', 'Drinkware', 'Travel', 'Tech', 'Utilities'];
 const CATEGORY_FALLBACK_GROUP = 'Utilities';
 
-/* Rewrites the loaded catalogue in place: products get their group as
-   `category` and their original tag as `subcategory`; `categories` is
-   rebuilt as the four groups, each listing only the tags that actually
-   have products behind them (so the dropdowns never show a dead link). */
+/* Rewrites the loaded catalogue in place: any product whose category isn't
+   one of the five nav headings falls back to Utilities; `categories` is
+   rebuilt as those five groups, each listing only the subcategories that
+   actually have products behind them (so the dropdowns never show a dead
+   link). */
 function regroupCatalogue(data) {
   const seen = {};
   for (const p of data.products || []) {
     let group = p.category;
     if (!NAV_CATEGORIES.includes(group) && group !== 'Gift Box') group = CATEGORY_FALLBACK_GROUP;
     p.category = group;
-    p.subcategory = p.subcategory || p.brand || group;
+    p.subcategory = p.subcategory || group;
     if (group === 'Gift Box') continue; // kept as products, kept out of top nav
     (seen[group] || (seen[group] = new Set())).add(p.subcategory);
   }
@@ -287,22 +287,40 @@ const PLACEHOLDER_IMG = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent
   '<text x="50%" y="50%" fill="#9aa0a6" font-family="system-ui,-apple-system,sans-serif" ' +
   'font-size="18" text-anchor="middle" dominant-baseline="middle">Image coming soon</text></svg>');
 
+/* Product photos are Google-Drive-hosted (lh3.googleusercontent.com/d/<id>=w1200),
+   served full-size regardless of where they render. A card shows one at ~250px
+   and All-products loads ~220 of them at once, so requesting the full 1200px
+   version everywhere is most of the page weight for nothing. This rewrites the
+   `=w####` size suffix to whatever the calling context actually needs; any URL
+   that is not a Drive thumbnail (data: placeholders included) passes through
+   unchanged. */
+function imgAt(url, w) {
+  if (!url || !/^https?:/.test(url)) return url;
+  return /=w\d+$/.test(url) ? url.replace(/=w\d+$/, '=w' + w) : url;
+}
+
 /* Live catalogue from the Apps Script feed when configured, else the bundled
    snapshot. The feed returns ONLY public columns (no cost/margins); the master
-   sheet stays private. A slow/failed feed falls back to the snapshot so the
-   store always renders. */
+   sheet stays private. Apps Script cold-starts can take several seconds, so a
+   slow OR failed feed both fall back to the snapshot rather than blocking
+   first render — the store must render fast even when the feed is cold. */
 async function loadCatalogueJSON() {
   const snapshot = () => fetch('assets/products.json').then(r => r.json());
   if (!CONFIG.FEED_URL) return snapshot();
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), 2500);
   try {
-    const u = CONFIG.FEED_URL + '?fn=catalog' + (CONFIG.API_TOKEN ? '&token=' + encodeURIComponent(CONFIG.API_TOKEN) : '');
-    const res = await fetch(u, { redirect: 'follow' });
+    const u = CONFIG.FEED_URL + '?fn=catalog&brand=' + encodeURIComponent(CONFIG.BRAND)
+      + (CONFIG.API_TOKEN ? '&token=' + encodeURIComponent(CONFIG.API_TOKEN) : '');
+    const res = await fetch(u, { redirect: 'follow', signal: ctrl.signal });
     if (!res.ok) throw new Error('feed ' + res.status);
     const data = await res.json();
     if (!data || !Array.isArray(data.products) || !data.products.length) throw new Error('empty feed');
     return data;
   } catch (err) {
     return snapshot();
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -892,7 +910,7 @@ function mount(active) {
 function productCard(p) {
   const lowest = lowestPrice(p);
   return el('a', { class: 'card', href: 'product.html?sku=' + encodeURIComponent(p.sku) },
-    el('div', { class: 'card-img' }, el('img', { src: p.image, alt: p.name, loading: 'lazy' })),
+    el('div', { class: 'card-img' }, el('img', { src: imgAt(p.image, 400), alt: p.name, loading: 'lazy' })),
     el('div', { class: 'card-body' },
       el('div', { class: 'card-sku' }, p.sku),
       el('div', { class: 'card-name' },

@@ -44,15 +44,21 @@
   const counts = {};
   for (const p of Catalog.products) counts[p.category] = (counts[p.category] || 0) + 1;
 
-  /* Each category is shown by its dearest product, which is reliably the one
-     photographed well enough to carry a tile. */
+  /* Each category tile shows a curated image when one is set in site.json's
+     `category_images` (e.g. { "Apparel": "<url>" }); otherwise it falls back
+     to the first in-stock product in that category (by Sr No / SKU order),
+     never the dearest — picking by price is what put a suitcase on the
+     Apparel tile and a vacuum cleaner on the Drinkware tile once those
+     categories mis-classified their priciest item. */
   document.getElementById('cats').append(...Catalog.categories.map(c => {
-    const rep = Catalog.products
-      .filter(p => p.category === c.slug)
-      .sort((a, b) => b.base_price - a.base_price)[0];
+    const curated = Site.get('category_images', {})[c.slug];
+    const rep = !curated && Catalog.products
+      .filter(p => p.category === c.slug && p.image && p.image !== PLACEHOLDER_IMG)
+      .sort((a, b) => a.sku.localeCompare(b.sku))[0];
+    const tileImg = curated || (rep && rep.image);
     return el('a', { class: 'cat-tile', href: 'category.html?cat=' + encodeURIComponent(c.slug) },
       el('div', { class: 'cat-tile-img' },
-        rep ? el('img', { src: rep.image, alt: '', loading: 'lazy' }) : null),
+        tileImg ? el('img', { src: imgAt(tileImg, 400), alt: '', loading: 'lazy' }) : null),
       el('div', { class: 'cat-tile-label' }, c.label),
       el('div', { class: 'small muted' }, `${counts[c.slug] || 0} products`));
   }));
